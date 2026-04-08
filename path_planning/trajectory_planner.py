@@ -93,34 +93,34 @@ class PathPlan(Node):
             height, width = map_data.shape
 
             for _ in range(max_iters):
-                # Sample
+                #sample
                 if np.random.rand() < bridge_prob:
                     x_rand = self.bridge_sample(map_data)
                 else:
                     x_rand = np.array([np.random.uniform(0, width*self.map_resolution),
                                     np.random.uniform(0, height*self.map_resolution)])
 
-                # Nearest node
+                #nearest node
                 diffs = tree_positions - x_rand
                 dists = np.linalg.norm(diffs, axis=1)
                 idx_nearest = np.argmin(dists)
                 x_nearest = tree_positions[idx_nearest]
 
-                # Steer
+                #steer
                 vec = x_rand - x_nearest
                 dist = np.linalg.norm(vec)
                 x_new = x_nearest + delta * vec / dist if dist > delta else x_rand
 
-                # Collision check
+                #collision check
                 if not self.collision_free(x_nearest, x_new, map_data):
                     continue
 
-                # Neighbors
+                #neighbors
                 vecs = tree_positions - x_new
                 neighbor_dists = np.linalg.norm(vecs, axis=1)
                 neighbors = np.where(neighbor_dists <= r)[0]
 
-                # Choose parent
+                #choose closest parent
                 min_cost = tree_costs[idx_nearest] + np.linalg.norm(x_new - x_nearest)
                 parent_idx = idx_nearest
                 for n_idx in neighbors:
@@ -129,26 +129,25 @@ class PathPlan(Node):
                         min_cost = cost_through_n
                         parent_idx = n_idx
 
-                # Add node
+                #add the new node
                 tree_positions = np.vstack([tree_positions, x_new])
                 tree_parents = np.append(tree_parents, parent_idx)
                 tree_costs = np.append(tree_costs, min_cost)
 
-                # Rewire neighbors
+                #rewire neighbors
                 for n_idx in neighbors:
                     cost_through_new = min_cost + np.linalg.norm(tree_positions[n_idx] - x_new)
                     if self.collision_free(x_new, tree_positions[n_idx], map_data) and cost_through_new < tree_costs[n_idx]:
                         tree_parents[n_idx] = len(tree_positions) - 1
                         tree_costs[n_idx] = cost_through_new
 
-                # Check goal
+                #check goal
                 if np.linalg.norm(x_new - goal) < delta:
                     tree_positions = np.vstack([tree_positions, goal])
                     tree_parents = np.append(tree_parents, len(tree_positions)-1)
                     tree_costs = np.append(tree_costs, min_cost + np.linalg.norm(x_new - goal))
                     break
 
-            # Extract path
             path = []
             idx = len(tree_positions) - 1
             while idx != -1:
