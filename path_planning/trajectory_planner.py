@@ -3,6 +3,8 @@ import heapq
 import rclpy
 import numpy as np
 
+import cv2
+
 from geometry_msgs.msg import PoseArray, PoseStamped
 from nav_msgs.msg import OccupancyGrid
 from path_planning.utils import LineTrajectory
@@ -59,7 +61,24 @@ class PathPlan(Node):
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
 
     def map_cb(self, msg):
-        self.map_data = np.array(msg.data).reshape((msg.info.height, msg.info.width))
+        # DILATE MAP
+        raw_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
+
+        map_uint8 = np.uint8(raw_map)
+
+        # calculate kernel size based on your car
+        car_radius_meters = 0.5
+        dilation_pixels = int(car_radius_meters / msg.info.resolution)
+
+        # create the circular structuring element from your script
+        kernel_size = 2 * dilation_pixels + 1
+        element = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+
+        # apply the dilation and convert back to standard python ints for the collision checker
+        dilated_map = cv2.dilate(map_uint8, element)
+        self.map_data = dilated_map.astype(int)
+
+        # save the rest of the metadata
         self.map_resolution = msg.info.resolution
         self.map_origin = (msg.info.origin.position.x, msg.info.origin.position.y)
         self.map_frame = msg.header.frame_id
@@ -277,12 +296,19 @@ class PathPlan(Node):
         tree_parents = np.array([-1], dtype=int)
         tree_costs = np.array([0.0], dtype=float)
         height, width = map_data.shape
-
-        reached_goal = False
+        best_goal_idx = -1
+        min_goal_cost = float('inf')
 
         for _ in range(max_iters):
-            if np.random.rand() < bridge_prob:
+            rand_float = np.random.rand()
+
+            # 5% of the time, sample the exact goal to pull the tree towards it
+            if rand_float < 0.05:
+                x_rand = np.array([goal[0], goal[1]])
+            # bridge sampling for narrow gaps
+            elif rand_float < 0.05 + bridge_prob:
                 x_rand = self.bridge_sample(map_data)
+            # pure random sampling
             else:
                 u_rand = np.random.uniform(0, width)
                 v_rand = np.random.uniform(0, height)
@@ -327,17 +353,23 @@ class PathPlan(Node):
                 if self.collision_free(x_new, tree_positions[n_idx], map_data) and cost_through_new < tree_costs[n_idx]:
                     tree_parents[n_idx] = new_idx
                     tree_costs[n_idx] = cost_through_new
+            # check if we are close enough to call the goal reached
+            if np.linalg.norm(x_new - goal) < delta:
+                cost_to_goal = min_cost + np.linalg.norm(x_new - goal)
 
-            if np.linalg.norm(x_new - goal) < delta and self.collision_free(x_new, np.array(goal), map_data):
-                tree_positions = np.vstack([tree_positions, goal])
-                tree_parents = np.append(tree_parents, new_idx)
-                tree_costs = np.append(tree_costs, min_cost + np.linalg.norm(x_new - goal))
-                reached_goal = True
-                break
+                # If this is the shortest path to the goal we've found so far, save it!
+                if cost_to_goal < min_goal_cost:
+                    min_goal_cost = cost_to_goal
+                    best_goal_idx = len(tree_positions) - 1 # save index of x_new
 
-        if not reached_goal:
+        # build the path
+        if best_goal_idx == -1:
+            self.get_logger().warn("max iterations reached without finding goal.")
             return None
 
+        # officially add the goal to the tree using our best found parent
+        tree_positions = np.vstack([tree_positions, goal])
+        tree_parents = np.append(tree_parents, best_goal_idx)
         path = []
         idx = len(tree_positions) - 1
         loop_safety = 0
