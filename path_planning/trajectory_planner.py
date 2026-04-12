@@ -74,7 +74,7 @@ class PathPlan(Node):
         if path is None:
             self.get_logger().warn("Failed to find a path")
             return
-        
+
         self.trajectory.clear()
 
         for p in path:
@@ -187,8 +187,8 @@ class PathPlan(Node):
         v = np.clip((yi / self.map_resolution).astype(int), 0, map_data.shape[0]-1)
         return np.all(map_data[v, u] == 0)
 
-    def main(args=None):
-        rclpy.init(args=args)
-        planner = PathPlan()
-        rclpy.spin(planner)
-        rclpy.shutdown()
+def main(args=None):
+    rclpy.init(args=args)
+    planner = PathPlan()
+    rclpy.spin(planner)
+    rclpy.shutdown()

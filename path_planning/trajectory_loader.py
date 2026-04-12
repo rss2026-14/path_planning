@@ -40,7 +40,6 @@ class LoadTrajectory(Node):
         print("Publishing trajectory to:", self.pub_topic)
         self.traj_pub.publish(self.trajectory.toPoseArray())
 
-
 def main(args=None):
     rclpy.init(args=args)
     load_trajectory = LoadTrajectory()
