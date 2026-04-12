@@ -67,7 +67,7 @@ class PathPlan(Node):
         map_uint8 = np.uint8(raw_map)
 
         # calculate kernel size based on your car
-        car_radius_meters = 0.5
+        car_radius_meters = 0.35
         dilation_pixels = int(car_radius_meters / msg.info.resolution)
 
         # create the circular structuring element from your script
@@ -196,16 +196,12 @@ class PathPlan(Node):
         self.trajectory.clear()
         for p in path:
             # use whichever addPoint signature your LineTrajectory expects
-            self.trajectory.addPoint(p[0], p[1])
+            self.trajectory.addPoint((p[0], p[1]))
 
         self.traj_pub.publish(self.trajectory.toPoseArray())
         self.trajectory.publish_viz()
         self.get_logger().info("path published")
 
-<<<<<<< HEAD
-    def rrt_star(self, start, goal, map_data, max_iters=5000, delta=0.5, r=2.0, bridge_prob=0.5):
-        # setup tree lists to store graph connections and costs
-=======
     # grid-based planner
     def a_star_grid(self, start_cell, goal_cell):
         neighbors = [
@@ -295,8 +291,7 @@ class PathPlan(Node):
         return inflated
 
     # sampling-based planner
-    def rrt_star(self, start, goal, map_data, max_iters=3000, delta=0.5, r=2.0, bridge_prob=0.5):
->>>>>>> f640b0d4a8c3146949ebf193b5c3c6bca51bbcb0
+    def rrt_star(self, start, goal, map_data, max_iters=5000, delta=0.5, r=2.0, bridge_prob=0.5):
         tree_positions = np.array([start], dtype=float)
         tree_parents = np.array([-1], dtype=int)
         tree_costs = np.array([0.0], dtype=float)
