@@ -1,6 +1,8 @@
 import rclpy
 import numpy as np
 
+import cv2
+
 from geometry_msgs.msg import PoseArray, PoseStamped
 from nav_msgs.msg import OccupancyGrid
 from path_planning.utils import LineTrajectory
@@ -43,13 +45,28 @@ class PathPlan(Node):
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
 
     def map_cb(self, msg):
-        # reshape map array to 2d grid
-        self.map_data = np.array(msg.data).reshape((msg.info.height, msg.info.width))
+        # DILATE MAP
+        raw_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
+
+        map_uint8 = np.uint8(raw_map)
+
+        # calculate kernel size based on your car
+        car_radius_meters = 0.5
+        dilation_pixels = int(car_radius_meters / msg.info.resolution)
+
+        # create the circular structuring element from your script
+        kernel_size = 2 * dilation_pixels + 1
+        element = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+
+        # apply the dilation and convert back to standard python ints for the collision checker
+        dilated_map = cv2.dilate(map_uint8, element)
+        self.map_data = dilated_map.astype(int)
+
+        # save the rest of the metadata
         self.map_resolution = msg.info.resolution
         self.map_origin = (msg.info.origin.position.x, msg.info.origin.position.y)
         self.map_frame = msg.header.frame_id
 
-        # extract the yaw (rotation) from the map's origin quaternion
         q = msg.info.origin.orientation
         siny_cosp = 2 * (q.w * q.z + q.x * q.y)
         cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
@@ -155,12 +172,20 @@ class PathPlan(Node):
         tree_costs = np.array([0.0], dtype=float)
         height, width = map_data.shape
 
+        best_goal_idx = -1
+        min_goal_cost = float('inf')
+
         for _ in range(max_iters):
-            # pick a random point (either by bridge heuristic or pure uniform random)
-            if np.random.rand() < bridge_prob:
+            rand_float = np.random.rand()
+
+            # 5% of the time, sample the exact goal to pull the tree towards it
+            if rand_float < 0.05:
+                x_rand = np.array([goal[0], goal[1]])
+            # bridge sampling for narrow gaps
+            elif rand_float < 0.05 + bridge_prob:
                 x_rand = self.bridge_sample(map_data)
+            # pure random sampling
             else:
-                # sample inside the grid pixels, then perfectly map it to real-world coordinates
                 u_rand = np.random.uniform(0, width)
                 v_rand = np.random.uniform(0, height)
                 xr, yr = self.grid_to_world(u_rand, v_rand)
@@ -209,15 +234,22 @@ class PathPlan(Node):
 
             # check if we are close enough to call the goal reached
             if np.linalg.norm(x_new - goal) < delta:
-                # save the index of x_new before we add the goal to the array to prevent loops
-                parent_idx_for_goal = len(tree_positions) - 1
+                cost_to_goal = min_cost + np.linalg.norm(x_new - goal)
 
-                tree_positions = np.vstack([tree_positions, goal])
-                tree_parents = np.append(tree_parents, parent_idx_for_goal)
-                tree_costs = np.append(tree_costs, min_cost + np.linalg.norm(x_new - goal))
-                break
+                # If this is the shortest path to the goal we've found so far, save it!
+                if cost_to_goal < min_goal_cost:
+                    min_goal_cost = cost_to_goal
+                    best_goal_idx = len(tree_positions) - 1 # save index of x_new
 
-        # reconstruct the path by walking backwards from goal to start
+        # build the path
+        if best_goal_idx == -1:
+            self.get_logger().warn("max iterations reached without finding goal.")
+            return None
+
+        # officially add the goal to the tree using our best found parent
+        tree_positions = np.vstack([tree_positions, goal])
+        tree_parents = np.append(tree_parents, best_goal_idx)
+
         path = []
         idx = len(tree_positions) - 1
 
