@@ -25,7 +25,7 @@ class PathPlan(Node):
         # declare ros parameters
         self.declare_parameter("odom_topic", "default")
         self.declare_parameter("map_topic", "default")
-        self.declare_parameter("planner_type", "grid")   # "sampling" or "grid"
+        self.declare_parameter("planner_type", "sampling")   # "sampling" or "grid"
         self.declare_parameter("occupancy_threshold", 50)
         self.declare_parameter("inflate_radius", 3)
 
@@ -195,9 +195,8 @@ class PathPlan(Node):
 
         self.trajectory.clear()
         for p in path:
-            # use whichever addPoint signature your LineTrajectory expects
-            self.trajectory.addPoint(p[0], p[1])
-
+            self.trajectory.addPoint(p)
+            
         self.traj_pub.publish(self.trajectory.toPoseArray())
         self.trajectory.publish_viz()
         self.get_logger().info("path published")
