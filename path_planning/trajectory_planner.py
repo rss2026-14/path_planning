@@ -165,7 +165,7 @@ class PathPlan(Node):
         self.trajectory.publish_viz()
         self.get_logger().info("path published")
 
-    def rrt_star(self, start, goal, map_data, max_iters=3000, delta=0.5, r=2.0, bridge_prob=0.5):
+    def rrt_star(self, start, goal, map_data, max_iters=5000, delta=0.5, r=2.0, bridge_prob=0.5):
         # setup tree lists to store graph connections and costs
         tree_positions = np.array([start], dtype=float)
         tree_parents = np.array([-1], dtype=int)

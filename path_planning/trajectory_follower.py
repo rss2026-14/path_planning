@@ -23,7 +23,7 @@ class PurePursuit(Node):
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
 
         self.lookahead = 1.0         # 1.0 meter lookahead distance
-        self.speed = 1.0             # 1.0 m/s constant speed
+        self.speed = 2.0             # 2.0 m/s constant speed
         self.wheelbase_length = 0.33 # 0.33 meters wheelbase
 
         self.initialized_traj = False
@@ -45,7 +45,7 @@ class PurePursuit(Node):
         if not self.initialized_traj or self.trajectory.empty():
             return
 
-        # 1. Extract current position and yaw from odometry
+        # Extract current position and yaw from odometry
         pose = odometry_msg.pose.pose
         curr_x = pose.position.x
         curr_y = pose.position.y
@@ -56,15 +56,33 @@ class PurePursuit(Node):
         cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         yaw = np.arctan2(siny_cosp, cosy_cosp)
 
-        # 2. Find the lookahead point
-        target_x, target_y = self._find_lookahead_point(curr_x, curr_y, yaw)
+        # Are we theree yetttt
+        goal_x, goal_y = self.trajectory.points[-1]
+        dist_to_goal = np.sqrt((goal_x - curr_x)**2 + (goal_y - curr_y)**2)
 
-        # If we couldn't find a valid point, continue straight
-        if target_x is None:
-            self._publish_drive_command(self.speed, 0.0)
+        # Use a small physical threshold (15cm).
+        # A moving robot will never hit exactly 0.0 distance.
+        if dist_to_goal < 0.15:
+            self.get_logger().info("Goal Reached! Stopping car.")
+            self._publish_drive_command(0.0, 0.0)
+            self.trajectory.clear() # Wipe the path so we don't keep looping
             return
 
-        # 3. Transform the target point to the vehicle's local frame
+        target_pt = self._find_lookahead_point(curr_x, curr_y, yaw)
+
+        if target_pt is None:
+            # If the goal is inside our lookahead circle, just target the goal directly.
+            if dist_to_goal <= self.lookahead:
+                target_pt = (goal_x, goal_y)
+            else:
+                # If we are far away and lost the path, safely stop.
+                self.get_logger().warn("No lookahead point found! Stopping.")
+                self._publish_drive_command(0.0, 0.0)
+                return
+
+        target_x, target_y = target_pt
+
+        # Transform the target point to the vehicle's local frame
         # Translate to origin, then rotate by the negative of the vehicle's yaw
         dx = target_x - curr_x
         dy = target_y - curr_y
@@ -77,7 +95,7 @@ class PurePursuit(Node):
 
         if actual_lookahead_sq > 0:
             # Pure pursuit formulation
-            steering_angle = np.atan2(2.0 * self.wheelbase_length * local_y, actual_lookahead_sq)
+            steering_angle = np.arctan2(2.0 * self.wheelbase_length * local_y, actual_lookahead_sq)
         else:
             steering_angle = 0.0
 
@@ -90,33 +108,61 @@ class PurePursuit(Node):
 
     def _find_lookahead_point(self, curr_x, curr_y, yaw):
         """
-        Finds the point on the trajectory closest to the lookahead distance
-        that is also IN FRONT of the vehicle.
+        Finds the intersection between the lookahead circle and the piecewise
+        continuous trajectory segments.
         """
-        best_pt = None
-        closest_dist_diff = float('inf')
+        if len(self.trajectory.points) < 2:
+            return None
 
-        # self.trajectory.points is a list of (x, y) tuples from utils.py
-        for pt_x, pt_y in self.trajectory.points:
+        target_pt = None
 
-            # Vector from car to point
-            dx = pt_x - curr_x
-            dy = pt_y - curr_y
+        for i in range(len(self.trajectory.points) - 1):
+            pt1 = self.trajectory.points[i]
+            pt2 = self.trajectory.points[i+1]
 
-            # Check if point is in front of the car using the dot product
-            # Car heading vector is (cos(yaw), sin(yaw))
-            dot_product = (np.cos(yaw) * dx) + (np.sin(yaw) * dy)
+            # Shift segment to origin based on car position
+            v1 = np.array([pt1[0] - curr_x, pt1[1] - curr_y])
+            v2 = np.array([pt2[0] - curr_x, pt2[1] - curr_y])
 
-            if dot_product > 0.0:  # strictly > 0 means it's in front
-                dist = np.sqrt(dx**2 + dy**2)
+            # Direction vector of the segment
+            d = v2 - v1
 
-                # Find the point whose distance from the car is closest to our lookahead radius
-                dist_diff = abs(dist - self.lookahead)
-                if dist_diff < closest_dist_diff:
-                    closest_dist_diff = dist_diff
-                    best_pt = (pt_x, pt_y)
+            # Quadratic coefficients for circle-line intersection
+            a = np.dot(d, d)
 
-        return best_pt
+            # FIX: Prevent divide-by-zero if the segment length is functionally zero
+            if a < 1e-6:
+                continue
+
+            b = 2.0 * np.dot(v1, d)
+            c = np.dot(v1, v1) - self.lookahead**2
+
+            discriminant = b**2 - 4*a*c
+
+            if discriminant >= 0:
+                # Two possible solutions for t (where the line intersects the circle)
+                t1 = (-b - np.sqrt(discriminant)) / (2.0 * a)
+                t2 = (-b + np.sqrt(discriminant)) / (2.0 * a)
+
+                # Check if the intersection points lie ON the segment (t must be between 0 and 1)
+                valid_t = [t for t in (t1, t2) if 0.0 <= t <= 1.0]
+
+                if valid_t:
+                    # If multiple intersections on this segment, take the larger t (further forward)
+                    best_t = max(valid_t)
+
+                    intersection_x = pt1[0] + best_t * (pt2[0] - pt1[0])
+                    intersection_y = pt1[1] + best_t * (pt2[1] - pt1[1])
+
+                    # Verify it's actually in front of the car using dot product
+                    dx = intersection_x - curr_x
+                    dy = intersection_y - curr_y
+                    if (np.cos(yaw) * dx + np.sin(yaw) * dy) > 0:
+                        target_pt = (intersection_x, intersection_y)
+                        # We don't break here! If the path loops or curves back into the circle,
+                        # the later segments will overwrite this, keeping us moving strictly forward.
+
+        return target_pt
 
     def _publish_drive_command(self, speed, steering_angle):
         """ Helper function to construct and publish the Ackermann message. """
