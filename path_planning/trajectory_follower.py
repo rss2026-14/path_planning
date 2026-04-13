@@ -23,7 +23,7 @@ class PurePursuit(Node):
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
 
         self.lookahead = 1.0         # 1.0 meter lookahead distance
-        self.speed = 2.0             # 2.0 m/s constant speed
+        self.speed = 1.0             # 2.0 m/s constant speed
         self.wheelbase_length = 0.33 # 0.33 meters wheelbase
 
         self.initialized_traj = False
