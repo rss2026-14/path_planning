@@ -10,7 +10,7 @@ particle_filter:
 
     # The field of view centered around theta=0
     scan_field_of_view: 4.71 # radians
-    
+
     # angle stride for downsampling the lidar data
     angle_step: 11
 
