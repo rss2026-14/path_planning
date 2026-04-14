@@ -277,7 +277,7 @@ class PathPlan(Node):
 
 
     # sampling-based planner
-    def rrt_star(self, start, goal, map_data, max_iters=5000, delta=0.5, r=2.0, bridge_prob=0.5):
+    def rrt_star(self, start, goal, map_data, max_iters=3500, delta=0.5, r=2.0, bridge_prob=0.5):
         tree_positions = np.array([start], dtype=float)
         tree_parents = np.array([-1], dtype=int)
         tree_costs = np.array([0.0], dtype=float)
