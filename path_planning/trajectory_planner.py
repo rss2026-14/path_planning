@@ -90,7 +90,6 @@ class PathPlan(Node):
 
         # build traversability grid for A*
         blocked = (self.map_data >= self.occupancy_threshold) | (self.map_data == -1)
-        blocked = self.inflate_obstacles(blocked, self.inflate_radius)
         self.free_grid = ~blocked
 
         self.get_logger().info(
@@ -273,21 +272,6 @@ class PathPlan(Node):
         h, w = self.map_data.shape
         return 0 <= u < w and 0 <= v < h
 
-    def inflate_obstacles(self, blocked, radius):
-        if radius <= 0:
-            return blocked.copy()
-
-        inflated = blocked.copy()
-        occupied = np.argwhere(blocked)
-
-        for v, u in occupied:
-            v0 = max(0, v - radius)
-            v1 = min(blocked.shape[0], v + radius + 1)
-            u0 = max(0, u - radius)
-            u1 = min(blocked.shape[1], u + radius + 1)
-            inflated[v0:v1, u0:u1] = True
-
-        return inflated
 
     # sampling-based planner
     def rrt_star(self, start, goal, map_data, max_iters=5000, delta=0.5, r=2.0, bridge_prob=0.5):
