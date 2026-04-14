@@ -4,6 +4,7 @@ import rclpy
 import numpy as np
 
 import cv2
+import time
 
 from geometry_msgs.msg import PoseArray, PoseStamped
 from nav_msgs.msg import OccupancyGrid
@@ -147,6 +148,7 @@ class PathPlan(Node):
         self.plan_path(current_pose, goal, self.map_data)
 
     def plan_path(self, start_point, end_point, map_data):
+        start=time.time()
         start_u, start_v = self.world_to_grid(start_point[0], start_point[1])
         goal_u, goal_v = self.world_to_grid(end_point[0], end_point[1])
 
@@ -199,6 +201,8 @@ class PathPlan(Node):
         for p in path:
             # use whichever addPoint signature your LineTrajectory expects
             self.trajectory.addPoint((p[0], p[1]))
+        self.get_logger().info(f"Total distance: {self.trajectory.distances[-1]}")
+        self.get_logger().info(f"Total time: {time.time()-start}")
         self.traj_pub.publish(self.trajectory.toPoseArray())
         self.trajectory.publish_viz()
         self.get_logger().info("path published")
