@@ -34,7 +34,7 @@ class PathPlan(Node):
         self.map_topic = self.get_parameter("map_topic").get_parameter_value().string_value
         self.planner_type = self.get_parameter("planner_type").get_parameter_value().string_value
         self.occupancy_threshold = self.get_parameter("occupancy_threshold").get_parameter_value().integer_value
-        self.inflate_radius = self.get_parameter("inflate_radius").get_parameter_value().integer_value
+        self.inflate_radius = self.get_parameter("inflate_radius").get_parameter_value().float_value
 
         # setup subscriptions and publishers
         self.map_sub = self.create_subscription(
