@@ -12,6 +12,7 @@ from rclpy.node import Node
 
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+from rcl_interfaces.msg import SetParametersResult
 
 
 class PathPlan(Node):
@@ -27,7 +28,7 @@ class PathPlan(Node):
         self.declare_parameter("map_topic", "default")
         self.declare_parameter("planner_type", "sampling")   # "sampling" or "grid"
         self.declare_parameter("occupancy_threshold", 50)
-        self.declare_parameter("inflate_radius", 3)
+        self.declare_parameter("inflate_radius", 0.43)
 
         self.odom_topic = self.get_parameter("odom_topic").get_parameter_value().string_value
         self.map_topic = self.get_parameter("map_topic").get_parameter_value().string_value
@@ -58,6 +59,8 @@ class PathPlan(Node):
         self.map_frame = None
         self.free_grid = None   # used by grid-based planning
 
+        self.add_on_set_parameters_callback(self.parameters_callback)
+
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
 
     def map_cb(self, msg):
@@ -67,7 +70,7 @@ class PathPlan(Node):
         map_uint8 = np.uint8(raw_map)
 
         # calculate kernel size based on your car
-        car_radius_meters = 0.35
+        car_radius_meters = self.inflate_radius
         dilation_pixels = int(car_radius_meters / msg.info.resolution)
 
         # create the circular structuring element from your script
@@ -411,6 +414,20 @@ class PathPlan(Node):
 
         return np.all((map_data[v, u] >= 0) & (map_data[v, u] < self.occupancy_threshold))
 
+
+    def parameters_callback(self, params):
+        """
+        Dynamically updates parameters when modified via 'ros2 param set'.
+        """
+        for param in params:
+            if param.name == 'planner_type':
+                self.planner_type = param.value
+                self.get_logger().info(f"Updated planner type to {self.planner_type}")
+            elif param.name == 'inflate_radius':
+                self.inflate_radius = param.value
+                self.get_logger().info(f"Updated inflate_radius to {self.inflate_radius}")
+
+        return SetParametersResult(successful=True)
 
 def main(args=None):
     rclpy.init(args=args)
