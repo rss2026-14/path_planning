@@ -25,7 +25,7 @@ class PathPlan(Node):
         # declare ros parameters
         self.declare_parameter("odom_topic", "default")
         self.declare_parameter("map_topic", "default")
-        self.declare_parameter("planner_type", "sampling")   # "sampling" or "grid"
+        self.declare_parameter("planner_type", "grid")   # "sampling" or "grid"
         self.declare_parameter("occupancy_threshold", 50)
         self.declare_parameter("inflate_radius", 3)
 
@@ -45,7 +45,10 @@ class PathPlan(Node):
         self.traj_pub = self.create_publisher(
             PoseArray, "/trajectory/current", 10
         )
-
+        # publishes planning time in seconds
+        self.timing_pub = self.create_publisher(
+            Float64, "/planning/time_elapsed", 10
+        )
         # setup tf2 for tracking coordinate frames
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
