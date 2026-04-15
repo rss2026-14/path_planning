@@ -4,6 +4,7 @@ import rclpy
 import numpy as np
 
 import cv2
+import time
 
 from geometry_msgs.msg import PoseArray, PoseStamped
 from nav_msgs.msg import OccupancyGrid
@@ -12,6 +13,7 @@ from rclpy.node import Node
 
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+from rcl_interfaces.msg import SetParametersResult
 
 
 class PathPlan(Node):
@@ -27,13 +29,13 @@ class PathPlan(Node):
         self.declare_parameter("map_topic", "default")
         self.declare_parameter("planner_type", "grid")   # "sampling" or "grid"
         self.declare_parameter("occupancy_threshold", 50)
-        self.declare_parameter("inflate_radius", 3)
+        self.declare_parameter("inflate_radius", 0.43)
 
         self.odom_topic = self.get_parameter("odom_topic").get_parameter_value().string_value
         self.map_topic = self.get_parameter("map_topic").get_parameter_value().string_value
         self.planner_type = self.get_parameter("planner_type").get_parameter_value().string_value
         self.occupancy_threshold = self.get_parameter("occupancy_threshold").get_parameter_value().integer_value
-        self.inflate_radius = self.get_parameter("inflate_radius").get_parameter_value().integer_value
+        self.inflate_radius = self.get_parameter("inflate_radius").get_parameter_value().double_value
 
         # setup subscriptions and publishers
         self.map_sub = self.create_subscription(
@@ -61,6 +63,8 @@ class PathPlan(Node):
         self.map_frame = None
         self.free_grid = None   # used by grid-based planning
 
+        self.add_on_set_parameters_callback(self.parameters_callback)
+
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
 
     def map_cb(self, msg):
@@ -70,7 +74,7 @@ class PathPlan(Node):
         map_uint8 = np.uint8(raw_map)
 
         # calculate kernel size based on your car
-        car_radius_meters = 0.35
+        car_radius_meters = self.inflate_radius
         dilation_pixels = int(car_radius_meters / msg.info.resolution)
 
         # create the circular structuring element from your script
@@ -147,6 +151,7 @@ class PathPlan(Node):
         self.plan_path(current_pose, goal, self.map_data)
 
     def plan_path(self, start_point, end_point, map_data):
+        start=time.time()
         start_u, start_v = self.world_to_grid(start_point[0], start_point[1])
         goal_u, goal_v = self.world_to_grid(end_point[0], end_point[1])
 
@@ -199,6 +204,8 @@ class PathPlan(Node):
         for p in path:
             # use whichever addPoint signature your LineTrajectory expects
             self.trajectory.addPoint((p[0], p[1]))
+        self.get_logger().info(f"Total distance: {self.trajectory.distances[-1]}")
+        self.get_logger().info(f"Total time: {time.time()-start}")
         self.traj_pub.publish(self.trajectory.toPoseArray())
         self.trajectory.publish_viz()
         self.get_logger().info("path published")
@@ -277,7 +284,7 @@ class PathPlan(Node):
 
 
     # sampling-based planner
-    def rrt_star(self, start, goal, map_data, max_iters=5000, delta=0.5, r=2.0, bridge_prob=0.5):
+    def rrt_star(self, start, goal, map_data, max_iters=3500, delta=0.5, r=2.0, bridge_prob=0.5):
         tree_positions = np.array([start], dtype=float)
         tree_parents = np.array([-1], dtype=int)
         tree_costs = np.array([0.0], dtype=float)
@@ -414,6 +421,20 @@ class PathPlan(Node):
 
         return np.all((map_data[v, u] >= 0) & (map_data[v, u] < self.occupancy_threshold))
 
+
+    def parameters_callback(self, params):
+        """
+        Dynamically updates parameters when modified via 'ros2 param set'.
+        """
+        for param in params:
+            if param.name == 'planner_type':
+                self.planner_type = param.value
+                self.get_logger().info(f"Updated planner type to {self.planner_type}")
+            elif param.name == 'inflate_radius':
+                self.inflate_radius = param.value
+                self.get_logger().info(f"Updated inflate_radius to {self.inflate_radius}")
+
+        return SetParametersResult(successful=True)
 
 def main(args=None):
     rclpy.init(args=args)
