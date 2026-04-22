@@ -30,7 +30,9 @@ class PathPlan(Node):
         self.declare_parameter("planner_type", "sampling")   # "sampling" or "grid"
         self.declare_parameter("occupancy_threshold", 50)
         self.declare_parameter("inflate_radius", 0.43)
+        self.declare_parameter("scale_factor", 0.5)
 
+        self.scale_factor = self.get_parameter("scale_factor").get_parameter_value().double_value
         self.odom_topic = self.get_parameter("odom_topic").get_parameter_value().string_value
         self.map_topic = self.get_parameter("map_topic").get_parameter_value().string_value
         self.planner_type = self.get_parameter("planner_type").get_parameter_value().string_value
@@ -64,18 +66,71 @@ class PathPlan(Node):
 
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
 
+    # def map_cb(self, msg):
+    #     # DILATE MAP
+    #     raw_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
+
+    #     map_uint8 = np.uint8(raw_map)
+
+    #     # calculate kernel size based on your car
+    #     car_radius_meters = self.inflate_radius
+    #     dilation_pixels = int(car_radius_meters / msg.info.resolution)
+
+    #     # create the circular structuring element from your script
+    #     kernel_size = 2 * dilation_pixels + 1
+    #     element = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+
+    #     # apply the dilation and convert back to standard python ints for the collision checker
+    #     dilated_map = cv2.dilate(map_uint8, element)
+    #     self.map_data = dilated_map.astype(int)
+
+    #     # save the rest of the metadata
+    #     self.map_resolution = msg.info.resolution
+    #     self.map_origin = (msg.info.origin.position.x, msg.info.origin.position.y)
+    #     self.map_frame = msg.header.frame_id
+
+    #     q = msg.info.origin.orientation
+    #     siny_cosp = 2 * (q.w * q.z + q.x * q.y)
+    #     cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
+    #     self.map_yaw = np.arctan2(siny_cosp, cosy_cosp)
+
+    #     # build traversability grid for A*
+    #     blocked = (self.map_data >= self.occupancy_threshold) | (self.map_data == -1)
+    #     self.free_grid = ~blocked
+
+    #     self.get_logger().info(
+    #         f"Map received. planner_type={self.planner_type}, "
+    #         f"inflate_radius={self.inflate_radius}"
+    #     )
     def map_cb(self, msg):
+        # 1. DEFINE YOUR SCALE FACTOR
+        # A scale of 0.5 shrinks the array size by half,
+        # making each grid square represent TWICE the physical area.
+        scale_factor = self.scale_factor
+
         # DILATE MAP
         raw_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
-
         map_uint8 = np.uint8(raw_map)
+
+        # 2. DOWNSAMPLE THE MAP ARRAY
+        new_width = int(msg.info.width * scale_factor)
+        new_height = int(msg.info.height * scale_factor)
+
+        # CRITICAL: You must use INTER_NEAREST.
+        # Linear/cubic interpolation will blur your categorical occupancy values (0, 100, -1) into invalid numbers.
+        map_uint8 = cv2.resize(map_uint8, (new_width, new_height), interpolation=cv2.INTER_NEAREST)
+
+        # 3. UPDATE THE RESOLUTION
+        self.map_resolution = msg.info.resolution / scale_factor
 
         # calculate kernel size based on your car
         car_radius_meters = self.inflate_radius
-        dilation_pixels = int(car_radius_meters / msg.info.resolution)
+        # (Make sure this uses the NEW self.map_resolution so the math checks out)
+        dilation_pixels = int(car_radius_meters / self.map_resolution)
 
         # create the circular structuring element from your script
-        kernel_size = 2 * dilation_pixels + 1
+        # Ensure kernel size is odd and at least 1
+        kernel_size = max(1, 2 * dilation_pixels + 1)
         element = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
 
         # apply the dilation and convert back to standard python ints for the collision checker
@@ -83,7 +138,6 @@ class PathPlan(Node):
         self.map_data = dilated_map.astype(int)
 
         # save the rest of the metadata
-        self.map_resolution = msg.info.resolution
         self.map_origin = (msg.info.origin.position.x, msg.info.origin.position.y)
         self.map_frame = msg.header.frame_id
 
@@ -98,7 +152,8 @@ class PathPlan(Node):
 
         self.get_logger().info(
             f"Map received. planner_type={self.planner_type}, "
-            f"inflate_radius={self.inflate_radius}"
+            f"inflate_radius={self.inflate_radius}, "
+            f"new_resolution={self.map_resolution}"
         )
 
     def world_to_grid(self, x, y):
@@ -430,6 +485,9 @@ class PathPlan(Node):
             elif param.name == 'inflate_radius':
                 self.inflate_radius = param.value
                 self.get_logger().info(f"Updated inflate_radius to {self.inflate_radius}")
+            elif param.name == 'scale_factor':
+                self.scale_factor = param.value
+                self.get_logger().info(f"Updated scale_factor to {self.scale_factor}")
 
         return SetParametersResult(successful=True)
 
