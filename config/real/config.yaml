@@ -8,3 +8,7 @@ trajectory_follower:
   ros__parameters:
     odom_topic: "/pf/pose/odom"
     drive_topic: "/vesc/low_level/input/navigation"
+
+safety_stop:
+  ros__parameters:
+    velocity: 1.0
