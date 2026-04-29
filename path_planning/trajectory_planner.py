@@ -66,6 +66,7 @@ class PathPlan(Node):
         self.add_on_set_parameters_callback(self.parameters_callback)
 
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
+        self.last_planned_goal = None
 
     # def map_cb(self, msg):
     #     # DILATE MAP
@@ -195,6 +196,17 @@ class PathPlan(Node):
         if self.map_data is None or self.map_frame is None:
             self.get_logger().warn("waiting for map data...")
             return
+
+        incoming_goal = (msg.pose.position.x, msg.pose.position.y)
+        if self.last_planned_goal is not None:
+            dist_to_last = math.hypot(incoming_goal[0] - self.last_planned_goal[0],
+                                      incoming_goal[1] - self.last_planned_goal[1])
+            if dist_to_last < 0.1: # If it's within 10cm of the old goal, ignore it!
+                self.get_logger().info("Received duplicate goal. Ignoring to prevent replanning.")
+                return
+
+        # Save it for next time
+        self.last_planned_goal = incoming_goal
 
         try:
             t = self.tf_buffer.lookup_transform(
