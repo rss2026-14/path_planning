@@ -23,7 +23,7 @@ class PurePursuit(Node):
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
 
-        self.lookahead = 0.9         # 1.0 meter lookahead distance
+        self.lookahead = 0.5         # 1.0 meter lookahead distance
         self.speed = 1.0             # 2.0 m/s constant speed
         self.wheelbase_length = 0.33 # 0.33 meters wheelbase
 
@@ -42,16 +42,16 @@ class PurePursuit(Node):
                                                self.drive_topic,
                                                1)
 
-        self.current_state = "NAVIGATING"
-        # self.current_state = "WAITING"
-    #     self.state_sub = self.create_subscription(String,
-    #                                             '/mission_state',
-    #                                             self.state_callback,
-    #                                             10
-    #                                             )
+        # self.current_state = "NAVIGATING"
+        self.current_state = "WAITING"
+        self.state_sub = self.create_subscription(String,
+                                                '/mission_state',
+                                                self.state_callback,
+                                                10
+                                                )
 
-    # def state_callback(self, msg):
-    #     self.current_state = msg.data
+    def state_callback(self, msg):
+        self.current_state = msg.data
 
     def pose_callback(self, odometry_msg):
         if not self.initialized_traj or self.trajectory.empty():
