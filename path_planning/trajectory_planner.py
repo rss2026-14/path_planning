@@ -28,7 +28,7 @@ class PathPlan(Node):
         # declare ros parameters
         self.declare_parameter("odom_topic", "default")
         self.declare_parameter("map_topic", "default")
-        self.declare_parameter("planner_type", "sampling")   # "sampling" or "grid"
+        self.declare_parameter("planner_type", "grid")   # "sampling" or "grid"
         self.declare_parameter("occupancy_threshold", 50)
         self.declare_parameter("inflate_radius", 0.43)
         self.declare_parameter("scale_factor", 0.7)
