@@ -198,15 +198,12 @@ class PathPlan(Node):
             return
 
         incoming_goal = (msg.pose.position.x, msg.pose.position.y)
+
         if self.last_planned_goal is not None:
             dist_to_last = math.hypot(incoming_goal[0] - self.last_planned_goal[0],
                                       incoming_goal[1] - self.last_planned_goal[1])
-            if dist_to_last < 0.1: # If it's within 10cm of the old goal, ignore it!
-                self.get_logger().info("Received duplicate goal. Ignoring to prevent replanning.")
+            if dist_to_last < 0.1:
                 return
-
-        # Save it for next time
-        self.last_planned_goal = incoming_goal
 
         try:
             t = self.tf_buffer.lookup_transform(
@@ -217,11 +214,12 @@ class PathPlan(Node):
                 t.transform.translation.y,
             )
         except Exception as ex:
-            self.get_logger().error(f"could not transform car pose: {ex}")
+            self.get_logger().warn(f"{ex}")
             return
 
-        goal = (msg.pose.position.x, msg.pose.position.y)
-        self.plan_path(current_pose, goal, self.map_data)
+        self.plan_path(current_pose, incoming_goal, self.map_data)
+
+        self.last_planned_goal = incoming_goal
 
     def smooth_path(self, path, num_points_multiplier=2, smoothing_factor=0.5):
         """
