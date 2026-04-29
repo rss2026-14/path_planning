@@ -15,6 +15,7 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from rcl_interfaces.msg import SetParametersResult
 
+import scipy.interpolate as si
 
 class PathPlan(Node):
     """Listens for goal pose published by RViz and plans a path from
@@ -30,7 +31,7 @@ class PathPlan(Node):
         self.declare_parameter("planner_type", "sampling")   # "sampling" or "grid"
         self.declare_parameter("occupancy_threshold", 50)
         self.declare_parameter("inflate_radius", 0.43)
-        self.declare_parameter("scale_factor", 0.5)
+        self.declare_parameter("scale_factor", 0.7)
 
         self.scale_factor = self.get_parameter("scale_factor").get_parameter_value().double_value
         self.odom_topic = self.get_parameter("odom_topic").get_parameter_value().string_value
@@ -150,6 +151,14 @@ class PathPlan(Node):
         blocked = (self.map_data >= self.occupancy_threshold) | (self.map_data == -1)
         self.free_grid = ~blocked
 
+        # NEW CHENISE EXPERIMENT PLEASE BE CAREFUL vvv
+        free_img = np.uint8(self.free_grid) * 255
+
+        # Calculate distance to the nearest zero (wall) for every pixel
+        # This creates a gradient where the center of the hallway has the highest values
+        self.dist_map = cv2.distanceTransform(free_img, cv2.DIST_L2, 5)
+        # NEW CHENISE EXPERIMENT PLEASE BE CAREFUL ^^^
+
         self.get_logger().info(
             f"Map received. planner_type={self.planner_type}, "
             f"inflate_radius={self.inflate_radius}, "
@@ -202,6 +211,44 @@ class PathPlan(Node):
         goal = (msg.pose.position.x, msg.pose.position.y)
         self.plan_path(current_pose, goal, self.map_data)
 
+    def smooth_path(self, path, num_points_multiplier=2, smoothing_factor=0.5):
+        """
+        Takes a list of (x,y) tuples and returns a smoothed list using B-splines.
+        Lower smoothing_factor = tighter adherence to original points.
+        """
+        # 1. Filter out consecutive duplicate points (This prevents the SciPy crash!)
+        filtered_path = [path[0]]
+        for pt in path[1:]:
+            # Calculate distance between current point and the last accepted point
+            dist = math.hypot(pt[0] - filtered_path[-1][0], pt[1] - filtered_path[-1][1])
+            # Only add the point if it's distinctly different (e.g., > 1mm away)
+            if dist > 1e-3:
+                filtered_path.append(pt)
+
+        # 2. Check if we still have enough points to make a spline
+        if len(filtered_path) < 4:
+            self.get_logger().warn("Path too short to smooth after filtering. Returning raw path.")
+            return filtered_path
+
+        x = [p[0] for p in filtered_path]
+        y = [p[1] for p in filtered_path]
+
+        # 3. Fit the Spline
+        try:
+            tck, u = si.splprep([x, y], s=smoothing_factor, k=3)
+
+            new_u = np.linspace(0, 1.0, len(filtered_path) * num_points_multiplier)
+            smoothed_x, smoothed_y = si.splev(new_u, tck)
+
+            smoothed_path = list(zip(smoothed_x, smoothed_y))
+            return smoothed_path
+
+        except ValueError as e:
+            # Fallback safety: If SciPy still throws a fit, just drive the raw path
+            # rather than crashing the whole node.
+            self.get_logger().error(f"SciPy Spline failed: {e}. Defaulting to raw path.")
+            return filtered_path
+
     def plan_path(self, start_point, end_point, map_data):
         start=time.time()
         start_u, start_v = self.world_to_grid(start_point[0], start_point[1])
@@ -251,6 +298,9 @@ class PathPlan(Node):
         if path is None:
             self.get_logger().warn("failed to find a path")
             return
+
+        self.get_logger().info("Smoothing path for Ackermann kinematics...")
+        path = self.smooth_path(path)
 
         self.trajectory.clear()
         for p in path:
@@ -311,6 +361,19 @@ class PathPlan(Node):
 
                 neighbor = (nu, nv)
                 tentative_g = g_score[current] + move_cost
+
+                #CHENISE ADD NEW THING NOT SURE IF WORKS vvv
+                # Get the distance to the wall (in pixels) for this neighbor cell
+                dist_to_wall = self.dist_map[nv, nu]
+
+                # Create a penalty. The smaller the distance, the larger the penalty.
+                # If it is 1 pixel from the wall, penalty is massive.
+                # If it is 20 pixels from the wall, penalty drops near zero.
+                # (You can tune the '5.0' multiplier to make it more/less afraid of walls)
+                wall_penalty = 5.0 / (dist_to_wall + 1e-5)
+
+                tentative_g = g_score[current] + move_cost + wall_penalty
+                #CHENISE ADD NEW THING NOT SURE IF WORKS ^^^
 
                 if neighbor not in g_score or tentative_g < g_score[neighbor]:
                     came_from[neighbor] = current
