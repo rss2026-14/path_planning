@@ -5,6 +5,7 @@ from geometry_msgs.msg import PoseArray
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from .utils import LineTrajectory
+from std_msgs.msg import String
 
 import numpy as np
 from std_msgs.msg import Bool, String
@@ -21,7 +22,7 @@ class PurePursuit(Node):
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
 
-        self.lookahead = 0.6         # 1.0 meter lookahead distance
+        self.lookahead = 0.5         # 1.0 meter lookahead distance
         self.speed = 1.0             # 2.0 m/s constant speed
         self.wheelbase_length = 0.33 # 0.33 meters wheelbase
 
@@ -53,12 +54,38 @@ class PurePursuit(Node):
             10
         )
 
+        # self.current_state = "NAVIGATING"
+        self.current_state = "WAITING"
+        self.state_sub = self.create_subscription(String,
+                                                '/mission_state',
+                                                self.state_callback,
+                                                10
+                                                )
+
+    def state_callback(self, msg):
+        self.current_state = msg.data
+
     def pose_callback(self, odometry_msg):
         if self.mission_state != "NAVIGATING":
             self._publish_drive_command(0.0, 0.0)
             return
         if not self.initialized_traj or self.trajectory.empty():
             return
+
+        if self.current_state == "OBSTACLE_PAUSE":
+            # Hard stop! Pedestrian or Red Light.
+            self._publish_drive_command(0.0, 0.0)
+            return
+
+        if self.current_state in ["PARKING_APPROACH", "PARKED"]:
+            # Visual servoing is handling the motors now. Do nothing.
+            return
+
+        # Determine dynamic speed based on state
+        current_speed = self.speed
+        if self.current_state == "METER_SEARCH":
+            # Slow down so YOLO images don't blur
+            current_speed = 0.5
 
         # Extract current position and yaw from odometry
         pose = odometry_msg.pose.pose
@@ -124,7 +151,7 @@ class PurePursuit(Node):
         steering_angle = np.clip(steering_angle, -0.34, 0.34)
 
         # 5. Publish the drive command
-        self._publish_drive_command(self.speed, float(steering_angle))
+        self._publish_drive_command(current_speed, float(steering_angle))
 
 
     def _find_lookahead_point(self, curr_x, curr_y, yaw):

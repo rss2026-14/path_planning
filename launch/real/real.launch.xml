@@ -9,5 +9,6 @@
         <param from="$(find-pkg-share path_planning)/config/real/pf_config.yaml"/>
     </node>
     <node pkg="lab03" name="safety_stop" exec="safety_stop" output="screen">
+        <param from="$(find-pkg-share path_planning)/config/real/config.yaml"/>
     </node>
 </launch>

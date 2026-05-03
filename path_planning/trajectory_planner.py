@@ -14,6 +14,7 @@ from rclpy.node import Node
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from rcl_interfaces.msg import SetParametersResult
+import scipy.interpolate as si
 
 class PathPlan(Node):
     """Listens for goal pose published by RViz and plans a path from
@@ -29,7 +30,9 @@ class PathPlan(Node):
         self.declare_parameter("planner_type", "grid")   # "sampling" or "grid"
         self.declare_parameter("occupancy_threshold", 50)
         self.declare_parameter("inflate_radius", 0.43)
+        self.declare_parameter("scale_factor", 0.7)
 
+        self.scale_factor = self.get_parameter("scale_factor").get_parameter_value().double_value
         self.odom_topic = self.get_parameter("odom_topic").get_parameter_value().string_value
         self.map_topic = self.get_parameter("map_topic").get_parameter_value().string_value
         self.planner_type = self.get_parameter("planner_type").get_parameter_value().string_value
@@ -65,19 +68,73 @@ class PathPlan(Node):
         self.add_on_set_parameters_callback(self.parameters_callback)
 
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
+        self.last_planned_goal = None
 
+    # def map_cb(self, msg):
+    #     # DILATE MAP
+    #     raw_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
+
+    #     map_uint8 = np.uint8(raw_map)
+
+    #     # calculate kernel size based on your car
+    #     car_radius_meters = self.inflate_radius
+    #     dilation_pixels = int(car_radius_meters / msg.info.resolution)
+
+    #     # create the circular structuring element from your script
+    #     kernel_size = 2 * dilation_pixels + 1
+    #     element = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+
+    #     # apply the dilation and convert back to standard python ints for the collision checker
+    #     dilated_map = cv2.dilate(map_uint8, element)
+    #     self.map_data = dilated_map.astype(int)
+
+    #     # save the rest of the metadata
+    #     self.map_resolution = msg.info.resolution
+    #     self.map_origin = (msg.info.origin.position.x, msg.info.origin.position.y)
+    #     self.map_frame = msg.header.frame_id
+
+    #     q = msg.info.origin.orientation
+    #     siny_cosp = 2 * (q.w * q.z + q.x * q.y)
+    #     cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
+    #     self.map_yaw = np.arctan2(siny_cosp, cosy_cosp)
+
+    #     # build traversability grid for A*
+    #     blocked = (self.map_data >= self.occupancy_threshold) | (self.map_data == -1)
+    #     self.free_grid = ~blocked
+
+    #     self.get_logger().info(
+    #         f"Map received. planner_type={self.planner_type}, "
+    #         f"inflate_radius={self.inflate_radius}"
+    #     )
     def map_cb(self, msg):
+        # 1. DEFINE YOUR SCALE FACTOR
+        # A scale of 0.5 shrinks the array size by half,
+        # making each grid square represent TWICE the physical area.
+        scale_factor = self.scale_factor
+
         # DILATE MAP
         raw_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
-
         map_uint8 = np.uint8(raw_map)
+
+        # 2. DOWNSAMPLE THE MAP ARRAY
+        new_width = int(msg.info.width * scale_factor)
+        new_height = int(msg.info.height * scale_factor)
+
+        # CRITICAL: You must use INTER_NEAREST.
+        # Linear/cubic interpolation will blur your categorical occupancy values (0, 100, -1) into invalid numbers.
+        map_uint8 = cv2.resize(map_uint8, (new_width, new_height), interpolation=cv2.INTER_NEAREST)
+
+        # 3. UPDATE THE RESOLUTION
+        self.map_resolution = msg.info.resolution / scale_factor
 
         # calculate kernel size based on your car
         car_radius_meters = self.inflate_radius
-        dilation_pixels = int(car_radius_meters / msg.info.resolution)
+        # (Make sure this uses the NEW self.map_resolution so the math checks out)
+        dilation_pixels = int(car_radius_meters / self.map_resolution)
 
         # create the circular structuring element from your script
-        kernel_size = 2 * dilation_pixels + 1
+        # Ensure kernel size is odd and at least 1
+        kernel_size = max(1, 2 * dilation_pixels + 1)
         element = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
 
         # apply the dilation and convert back to standard python ints for the collision checker
@@ -85,7 +142,6 @@ class PathPlan(Node):
         self.map_data = dilated_map.astype(int)
 
         # save the rest of the metadata
-        self.map_resolution = msg.info.resolution
         self.map_origin = (msg.info.origin.position.x, msg.info.origin.position.y)
         self.map_frame = msg.header.frame_id
 
@@ -98,9 +154,18 @@ class PathPlan(Node):
         blocked = (self.map_data >= self.occupancy_threshold) | (self.map_data == -1)
         self.free_grid = ~blocked
 
+        # NEW CHENISE EXPERIMENT PLEASE BE CAREFUL vvv
+        free_img = np.uint8(self.free_grid) * 255
+
+        # Calculate distance to the nearest zero (wall) for every pixel
+        # This creates a gradient where the center of the hallway has the highest values
+        self.dist_map = cv2.distanceTransform(free_img, cv2.DIST_L2, 5)
+        # NEW CHENISE EXPERIMENT PLEASE BE CAREFUL ^^^
+
         self.get_logger().info(
             f"Map received. planner_type={self.planner_type}, "
-            f"inflate_radius={self.inflate_radius}"
+            f"inflate_radius={self.inflate_radius}, "
+            f"new_resolution={self.map_resolution}"
         )
 
     def world_to_grid(self, x, y):
@@ -134,6 +199,14 @@ class PathPlan(Node):
             self.get_logger().warn("waiting for map data...")
             return
 
+        incoming_goal = (msg.pose.position.x, msg.pose.position.y)
+
+        if self.last_planned_goal is not None:
+            dist_to_last = math.hypot(incoming_goal[0] - self.last_planned_goal[0],
+                                      incoming_goal[1] - self.last_planned_goal[1])
+            if dist_to_last < 0.1:
+                return
+
         try:
             t = self.tf_buffer.lookup_transform(
                 self.map_frame, "base_link", rclpy.time.Time()
@@ -143,11 +216,50 @@ class PathPlan(Node):
                 t.transform.translation.y,
             )
         except Exception as ex:
-            self.get_logger().error(f"could not transform car pose: {ex}")
+            self.get_logger().warn(f"{ex}")
             return
 
-        goal = (msg.pose.position.x, msg.pose.position.y)
-        self.plan_path(current_pose, goal, self.map_data)
+        self.plan_path(current_pose, incoming_goal, self.map_data)
+
+        self.last_planned_goal = incoming_goal
+
+    def smooth_path(self, path, num_points_multiplier=2, smoothing_factor=0.5):
+        """
+        Takes a list of (x,y) tuples and returns a smoothed list using B-splines.
+        Lower smoothing_factor = tighter adherence to original points.
+        """
+        # 1. Filter out consecutive duplicate points (This prevents the SciPy crash!)
+        filtered_path = [path[0]]
+        for pt in path[1:]:
+            # Calculate distance between current point and the last accepted point
+            dist = math.hypot(pt[0] - filtered_path[-1][0], pt[1] - filtered_path[-1][1])
+            # Only add the point if it's distinctly different (e.g., > 1mm away)
+            if dist > 1e-3:
+                filtered_path.append(pt)
+
+        # 2. Check if we still have enough points to make a spline
+        if len(filtered_path) < 4:
+            self.get_logger().warn("Path too short to smooth after filtering. Returning raw path.")
+            return filtered_path
+
+        x = [p[0] for p in filtered_path]
+        y = [p[1] for p in filtered_path]
+
+        # 3. Fit the Spline
+        try:
+            tck, u = si.splprep([x, y], s=smoothing_factor, k=3)
+
+            new_u = np.linspace(0, 1.0, len(filtered_path) * num_points_multiplier)
+            smoothed_x, smoothed_y = si.splev(new_u, tck)
+
+            smoothed_path = list(zip(smoothed_x, smoothed_y))
+            return smoothed_path
+
+        except ValueError as e:
+            # Fallback safety: If SciPy still throws a fit, just drive the raw path
+            # rather than crashing the whole node.
+            self.get_logger().error(f"SciPy Spline failed: {e}. Defaulting to raw path.")
+            return filtered_path
 
     def plan_path(self, start_point, end_point, map_data):
         start=time.time()
@@ -198,6 +310,9 @@ class PathPlan(Node):
         if path is None:
             self.get_logger().warn("failed to find a path")
             return
+
+        self.get_logger().info("Smoothing path for Ackermann kinematics...")
+        # path = self.smooth_path(path)
 
         self.trajectory.clear()
         for p in path:
@@ -258,6 +373,19 @@ class PathPlan(Node):
 
                 neighbor = (nu, nv)
                 tentative_g = g_score[current] + move_cost
+
+                #CHENISE ADD NEW THING NOT SURE IF WORKS vvv
+                # Get the distance to the wall (in pixels) for this neighbor cell
+                dist_to_wall = self.dist_map[nv, nu]
+
+                # Create a penalty. The smaller the distance, the larger the penalty.
+                # If it is 1 pixel from the wall, penalty is massive.
+                # If it is 20 pixels from the wall, penalty drops near zero.
+                # (You can tune the '5.0' multiplier to make it more/less afraid of walls)
+                wall_penalty = 5.0 / (dist_to_wall + 1e-5)
+
+                tentative_g = g_score[current] + move_cost + wall_penalty
+                #CHENISE ADD NEW THING NOT SURE IF WORKS ^^^
 
                 if neighbor not in g_score or tentative_g < g_score[neighbor]:
                     came_from[neighbor] = current
@@ -432,6 +560,9 @@ class PathPlan(Node):
             elif param.name == 'inflate_radius':
                 self.inflate_radius = param.value
                 self.get_logger().info(f"Updated inflate_radius to {self.inflate_radius}")
+            elif param.name == 'scale_factor':
+                self.scale_factor = param.value
+                self.get_logger().info(f"Updated scale_factor to {self.scale_factor}")
 
         return SetParametersResult(successful=True)
 
