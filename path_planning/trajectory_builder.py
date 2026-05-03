@@ -9,6 +9,7 @@ from path_planning.utils import LineTrajectory
 from rclpy.node import Node
 from typing import List, Tuple
 from visualization_msgs.msg import Marker
+from geometry_msgs.msg import PoseStamped
 
 
 class BuildTrajectory(Node):
@@ -33,6 +34,7 @@ class BuildTrajectory(Node):
         self.click_sub = self.create_subscription(PointStamped, "/clicked_point", self.clicked_pose, 10)
         self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", 10)
         self.trajectory_points = self.create_publisher(Marker, "/traj_pts", 20)
+        self.goal_pub = self.create_publisher(PoseStamped, "/goal_pose", 10)
         self.trajectory.publish_viz()
 
         self.get_logger().info("Press Ctrl+C to exit. Trajectory auto-saves after each new point.")
@@ -57,6 +59,19 @@ class BuildTrajectory(Node):
             self.publish_trajectory()
             self.trajectory.publish_viz()
             self.saveTrajectory()
+        goal_msg = PoseStamped()
+        goal_msg.header.stamp = self.get_clock().now().to_msg()
+        goal_msg.header.frame_id = "map"
+        goal_msg.pose.position.x = msg.point.x
+        goal_msg.pose.position.y = msg.point.y
+        goal_msg.pose.position.z = 0.0
+        goal_msg.pose.orientation.w = 1.0
+
+        self.goal_pub.publish(goal_msg)
+
+        self.get_logger().info(
+            f"Published section endpoint to /goal_pose: x={msg.point.x:.2f}, y={msg.point.y:.2f}"
+        )
 
     def tuple_to_point(self, data_points: List[Tuple[float, float]]) -> List[Point]:
         return [Point(x=x, y=y) for x, y in data_points]

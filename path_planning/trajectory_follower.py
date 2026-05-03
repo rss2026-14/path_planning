@@ -7,7 +7,7 @@ from rclpy.node import Node
 from .utils import LineTrajectory
 
 import numpy as np
-
+from std_msgs.msg import Bool, String
 
 class PurePursuit(Node):
     """
@@ -18,7 +18,6 @@ class PurePursuit(Node):
         super().__init__("trajectory_follower")
         self.declare_parameter('odom_topic', "default")
         self.declare_parameter('drive_topic', "default")
-
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
 
@@ -40,8 +39,24 @@ class PurePursuit(Node):
         self.drive_pub = self.create_publisher(AckermannDriveStamped,
                                                self.drive_topic,
                                                1)
+        self.mission_state = "WAITING"
+        self.state_sub = self.create_subscription(
+            String,
+            "/mission_state",
+            self.state_callback,
+            10
+        )
+
+        self.reached_pub = self.create_publisher(
+            Bool,
+            "/trajectory/reached",
+            10
+        )
 
     def pose_callback(self, odometry_msg):
+        if self.mission_state != "NAVIGATING":
+            self._publish_drive_command(0.0, 0.0)
+            return
         if not self.initialized_traj or self.trajectory.empty():
             return
 
@@ -63,9 +78,15 @@ class PurePursuit(Node):
         # Use a small physical threshold (15cm).
         # A moving robot will never hit exactly 0.0 distance.
         if dist_to_goal < 0.15:
-            self.get_logger().info("Goal Reached! Stopping car.")
+            self.get_logger().info("Trajectory reached. Notifying state decider.")
             self._publish_drive_command(0.0, 0.0)
-            self.trajectory.clear() # Wipe the path so we don't keep looping
+
+            reached_msg = Bool()
+            reached_msg.data = True
+            self.reached_pub.publish(reached_msg)
+
+            self.trajectory.clear()
+            self.initialized_traj = False
             return
 
         target_pt = self._find_lookahead_point(curr_x, curr_y, yaw)
@@ -182,6 +203,12 @@ class PurePursuit(Node):
         self.trajectory.publish_viz(duration=0.0)
 
         self.initialized_traj = True
+        
+    def state_callback(self, msg):
+        self.mission_state = msg.data
+
+        if self.mission_state != "NAVIGATING":
+            self._publish_drive_command(0.0, 0.0)
 
 
 def main(args=None):

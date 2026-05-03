@@ -15,7 +15,6 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from rcl_interfaces.msg import SetParametersResult
 
-
 class PathPlan(Node):
     """Listens for goal pose published by RViz and plans a path from
     the current car pose using either sampling-based or grid-based planning.
@@ -42,7 +41,7 @@ class PathPlan(Node):
             OccupancyGrid, self.map_topic, self.map_cb, 1
         )
         self.goal_sub = self.create_subscription(
-            PoseStamped, "/goal_pose", self.goal_cb, 10
+            PoseStamped, "/planner/goal ", self.goal_cb, 10
         )
         self.traj_pub = self.create_publisher(
             PoseArray, "/trajectory/current", 10

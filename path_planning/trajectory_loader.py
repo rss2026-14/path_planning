@@ -6,8 +6,7 @@ from geometry_msgs.msg import PoseArray
 from path_planning.utils import LineTrajectory
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile
-
-
+from geometry_msgs.msg import PoseStamped
 class LoadTrajectory(Node):
     """ Loads a trajectory from the file system and publishes it to a ROS topic.
     """
@@ -23,9 +22,9 @@ class LoadTrajectory(Node):
         self.get_logger().info(f"Loading from {self.path}")
         self.trajectory.load(self.path)
 
-        self.pub_topic = "/trajectory/current"
+        self.pub_topic = "/goal_pose"
         latched_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        self.traj_pub = self.create_publisher(PoseArray, self.pub_topic, latched_qos)
+        self.goal_pub = self.create_publisher(PoseArray, self.pub_topic, latched_qos)
 
         # need to wait a short period of time before publishing the first message
         time.sleep(0.5)
@@ -37,8 +36,25 @@ class LoadTrajectory(Node):
         self.publish_trajectory()
 
     def publish_trajectory(self):
-        print("Publishing trajectory to:", self.pub_topic)
-        self.traj_pub.publish(self.trajectory.toPoseArray())
+        if self.trajectory.empty():
+            self.get_logger().warn("Loaded trajectory is empty. No goal published.")
+            return
+
+        goal_x, goal_y = self.trajectory.points[-1]
+
+        goal_msg = PoseStamped()
+        goal_msg.header.stamp = self.get_clock().now().to_msg()
+        goal_msg.header.frame_id = "map"
+        goal_msg.pose.position.x = float(goal_x)
+        goal_msg.pose.position.y = float(goal_y)
+        goal_msg.pose.position.z = 0.0
+        goal_msg.pose.orientation.w = 1.0
+
+        self.get_logger().info(
+            f"Publishing section endpoint to /goal_pose: x={goal_x:.2f}, y={goal_y:.2f}"
+        )
+
+        self.goal_pub.publish(goal_msg)
 
 def main(args=None):
     rclpy.init(args=args)
