@@ -19,12 +19,19 @@ class PurePursuit(Node):
         super().__init__("trajectory_follower")
         self.declare_parameter('odom_topic', "default")
         self.declare_parameter('drive_topic', "default")
+        self.declare_parameter('lookahead', 0.9)
+        self.declare_parameter('speed', 0.5)
+        self.declare_parameter('max_steering_angle', 0.22)
+        self.declare_parameter('steering_smoothing', 0.7)
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
 
-        self.lookahead = 0.5         # 1.0 meter lookahead distance
-        self.speed = 1.0             # 2.0 m/s constant speed
+        self.lookahead = self.get_parameter('lookahead').get_parameter_value().double_value
+        self.speed = self.get_parameter('speed').get_parameter_value().double_value
+        self.max_steering_angle = self.get_parameter('max_steering_angle').get_parameter_value().double_value
+        self.steering_smoothing = self.get_parameter('steering_smoothing').get_parameter_value().double_value
         self.wheelbase_length = 0.33 # 0.33 meters wheelbase
+        self.prev_steering_angle = 0.0
 
         self.initialized_traj = False
         self.trajectory = LineTrajectory(self, "/followed_trajectory")
@@ -54,20 +61,13 @@ class PurePursuit(Node):
             10
         )
 
-        # self.current_state = "NAVIGATING"
         self.current_state = "WAITING"
-        self.state_sub = self.create_subscription(String,
-                                                '/mission_state',
-                                                self.state_callback,
-                                                10
-                                                )
-
-    def state_callback(self, msg):
-        self.current_state = msg.data
 
     def pose_callback(self, odometry_msg):
         if self.mission_state != "NAVIGATING":
-            self._publish_drive_command(0.0, 0.0)
+            # The executive or visual-servo controllers own the drive topic
+            # outside NAVIGATING. Stay quiet so METER_SEARCH/PARKING commands
+            # are not overwritten by a stream of zeros.
             return
         if not self.initialized_traj or self.trajectory.empty():
             return
@@ -123,10 +123,11 @@ class PurePursuit(Node):
             if dist_to_goal <= self.lookahead:
                 target_pt = (goal_x, goal_y)
             else:
-                # If we are far away and lost the path, safely stop.
-                self.get_logger().warn("No lookahead point found! Stopping.")
-                self._publish_drive_command(0.0, 0.0)
-                return
+                # Brief localization/path jitter can make the circle intersection
+                # disappear for a frame. Keep moving gently toward the final goal
+                # instead of alternating between drive and hard stop.
+                self.get_logger().warn("No lookahead point found. Falling back to goal point.")
+                target_pt = (goal_x, goal_y)
 
         target_x, target_y = target_pt
 
@@ -147,8 +148,16 @@ class PurePursuit(Node):
         else:
             steering_angle = 0.0
 
-        # Clip steering angle to physical limits (approx +/- 20 degrees or 0.34 rads)
-        steering_angle = np.clip(steering_angle, -0.34, 0.34)
+        steering_angle = np.clip(
+            steering_angle,
+            -self.max_steering_angle,
+            self.max_steering_angle,
+        )
+        steering_angle = (
+            self.steering_smoothing * self.prev_steering_angle
+            + (1.0 - self.steering_smoothing) * steering_angle
+        )
+        self.prev_steering_angle = steering_angle
 
         # 5. Publish the drive command
         self._publish_drive_command(current_speed, float(steering_angle))
@@ -233,8 +242,10 @@ class PurePursuit(Node):
         
     def state_callback(self, msg):
         self.mission_state = msg.data
+        self.current_state = msg.data
 
-        if self.mission_state != "NAVIGATING":
+        if self.mission_state in ["WAITING", "OBSTACLE_PAUSE", "PARKED", "DONE"]:
+            self.prev_steering_angle = 0.0
             self._publish_drive_command(0.0, 0.0)
 
 
