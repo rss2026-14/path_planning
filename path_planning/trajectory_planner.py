@@ -44,7 +44,7 @@ class PathPlan(Node):
             OccupancyGrid, self.map_topic, self.map_cb, 1
         )
         self.goal_sub = self.create_subscription(
-            PoseStamped, "/planner/goal ", self.goal_cb, 10
+            PoseStamped, "/planner/goal", self.goal_cb, 10
         )
         self.traj_pub = self.create_publisher(
             PoseArray, "/trajectory/current", 10
