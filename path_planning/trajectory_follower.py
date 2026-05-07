@@ -77,7 +77,7 @@ class PurePursuit(Node):
             self._publish_drive_command(0.0, 0.0)
             return
 
-        if self.current_state in ["PARKING_APPROACH", "PARKED"]:
+        if self.current_state in ["PARKING", "PARKED"]:
             # Visual servoing is handling the motors now. Do nothing.
             return
 
