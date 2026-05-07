@@ -19,7 +19,7 @@ class PurePursuit(Node):
         super().__init__("trajectory_follower")
         self.declare_parameter('odom_topic', "default")
         self.declare_parameter('drive_topic', "default")
-        self.declare_parameter('lookahead', 0.9)
+        self.declare_parameter('lookahead', 0.5)
         self.declare_parameter('speed', 0.5)
         self.declare_parameter('max_steering_angle', 0.22)
         self.declare_parameter('steering_smoothing', 0.7)
@@ -142,7 +142,7 @@ class PurePursuit(Node):
         # 4. Calculate steering angle
         actual_lookahead_sq = local_x**2 + local_y**2
 
-        if actual_lookahead_sq > 0:
+        if actual_lookahead_sq > 0.0:
             # Pure pursuit formulation
             steering_angle = np.arctan2(2.0 * self.wheelbase_length * local_y, actual_lookahead_sq)
         else:
@@ -228,7 +228,7 @@ class PurePursuit(Node):
         drive_cmd.header.frame_id = 'base_link'
         # drive_cmd.drive.speed = float(speed)
         drive_cmd.drive.speed = 1.0
-        drive_cmd.drive.steering_angle = float(steering_angle)
+        drive_cmd.drive.steering_angle = steering_angle
 
         self.drive_pub.publish(drive_cmd)
 
