@@ -15,6 +15,7 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from rcl_interfaces.msg import SetParametersResult
 import scipy.interpolate as si
+from std_msgs.msg import Float64
 
 class PathPlan(Node):
     """Listens for goal pose published by RViz and plans a path from
