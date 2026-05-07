@@ -226,7 +226,8 @@ class PurePursuit(Node):
         drive_cmd = AckermannDriveStamped()
         drive_cmd.header.stamp = self.get_clock().now().to_msg()
         drive_cmd.header.frame_id = 'base_link'
-        drive_cmd.drive.speed = float(speed)
+        # drive_cmd.drive.speed = float(speed)
+        drive_cmd.drive.speed = 1.0
         drive_cmd.drive.steering_angle = float(steering_angle)
 
         self.drive_pub.publish(drive_cmd)
@@ -239,7 +240,7 @@ class PurePursuit(Node):
         self.trajectory.publish_viz(duration=0.0)
 
         self.initialized_traj = True
-        
+
     def state_callback(self, msg):
         self.mission_state = msg.data
         self.current_state = msg.data
