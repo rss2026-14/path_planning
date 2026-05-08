@@ -126,8 +126,18 @@ class PurePursuit(Node):
                 # Brief localization/path jitter can make the circle intersection
                 # disappear for a frame. Keep moving gently toward the final goal
                 # instead of alternating between drive and hard stop.
-                self.get_logger().warn("No lookahead point found. Falling back to goal point.")
-                target_pt = (goal_x, goal_y)
+                # self.get_logger().warn("No lookahead point found. Falling back to goal point.")
+                # target_pt = (goal_x, goal_y)
+                # NEW TEST CHANGE
+                self.get_logger().warn("No lookahead point found. Falling back to closest path point.")
+                closest_dist = float('inf')
+                closest_pt = self.trajectory.points[-1]
+                for pt in self.trajectory.points:
+                    d = np.sqrt((pt[0] - curr_x)**2 + (pt[1] - curr_y)**2)
+                    if d < closest_dist:
+                        closest_dist = d
+                        closest_pt = pt
+                target_pt = closest_pt
 
         target_x, target_y = target_pt
 
@@ -218,6 +228,8 @@ class PurePursuit(Node):
                         target_pt = (intersection_x, intersection_y)
                         # We don't break here! If the path loops or curves back into the circle,
                         # the later segments will overwrite this, keeping us moving strictly forward.
+                        # LETS TRY BREAKING AND SEEING WHAT HAPPENS
+                        break
 
         return target_pt
 
@@ -226,8 +238,8 @@ class PurePursuit(Node):
         drive_cmd = AckermannDriveStamped()
         drive_cmd.header.stamp = self.get_clock().now().to_msg()
         drive_cmd.header.frame_id = 'base_link'
-        # drive_cmd.drive.speed = float(speed)
-        drive_cmd.drive.speed = 1.0
+        drive_cmd.drive.speed = speed
+        # drive_cmd.drive.speed = 1.0
         drive_cmd.drive.steering_angle = steering_angle
 
         self.drive_pub.publish(drive_cmd)
