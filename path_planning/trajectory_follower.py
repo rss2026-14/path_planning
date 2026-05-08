@@ -22,7 +22,7 @@ class PurePursuit(Node):
         self.declare_parameter('lookahead', 0.8)
         self.declare_parameter('speed', 1.0)
         self.declare_parameter('max_steering_angle', 0.22)
-        self.declare_parameter('steering_smoothing', 0.7)
+        self.declare_parameter('steering_smoothing', 0.1)
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
 
