@@ -130,15 +130,18 @@ class PurePursuit(Node):
                 # self.get_logger().warn("No lookahead point found. Falling back to goal point.")
                 # target_pt = (goal_x, goal_y)
                 # NEW TEST CHANGE
-                self.get_logger().warn("No lookahead point found. Falling back to closest path point.")
-                closest_dist = float('inf')
-                closest_pt = self.trajectory.points[-1]
-                for pt in self.trajectory.points:
-                    d = np.sqrt((pt[0] - curr_x)**2 + (pt[1] - curr_y)**2)
-                    if d < closest_dist:
-                        closest_dist = d
-                        closest_pt = pt
-                target_pt = closest_pt
+                #self.get_logger().warn("No lookahead point found. Falling back to closest path point.")
+                ##closest_dist = float('inf')
+                ##closest_pt = self.trajectory.points[-1]
+                ##for pt in self.trajectory.points:
+                 #   d = np.sqrt((pt[0] - curr_x)**2 + (pt[1] - curr_y)**2)
+                 #   if d < closest_dist:
+                 #       closest_dist = d
+                 #       closest_pt = pt
+                #target_pt = closest_pt
+                pose = odometry_msg.pose.pose
+                target_x = pose.position.x
+                target_y = pose.position.y
 
         target_x, target_y = target_pt
 
