@@ -20,10 +20,10 @@ class PurePursuit(Node):
         super().__init__("trajectory_follower")
         self.declare_parameter('odom_topic', "default")
         self.declare_parameter('drive_topic', "default")
-        self.declare_parameter('lookahead', 0.9)
-        self.declare_parameter('speed', 0.5)
+        self.declare_parameter('lookahead', 0.8)
+        self.declare_parameter('speed', 1.0)
         self.declare_parameter('max_steering_angle', 0.22)
-        self.declare_parameter('steering_smoothing', 0.7)
+        self.declare_parameter('steering_smoothing', 0.1)
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
 
@@ -78,7 +78,7 @@ class PurePursuit(Node):
             self._publish_drive_command(0.0, 0.0)
             return
 
-        if self.current_state in ["PARKING_APPROACH", "PARKED"]:
+        if self.current_state in ["PARKING", "PARKED"]:
             # Visual servoing is handling the motors now. Do nothing.
             return
 
@@ -127,8 +127,18 @@ class PurePursuit(Node):
                 # Brief localization/path jitter can make the circle intersection
                 # disappear for a frame. Keep moving gently toward the final goal
                 # instead of alternating between drive and hard stop.
-                self.get_logger().warn("No lookahead point found. Falling back to goal point.")
-                target_pt = (goal_x, goal_y)
+                # self.get_logger().warn("No lookahead point found. Falling back to goal point.")
+                # target_pt = (goal_x, goal_y)
+                # NEW TEST CHANGE
+                self.get_logger().warn("No lookahead point found. Falling back to closest path point.")
+                closest_dist = float('inf')
+                closest_pt = self.trajectory.points[-1]
+                for pt in self.trajectory.points:
+                    d = np.sqrt((pt[0] - curr_x)**2 + (pt[1] - curr_y)**2)
+                    if d < closest_dist:
+                        closest_dist = d
+                        closest_pt = pt
+                target_pt = closest_pt
 
         target_x, target_y = target_pt
 
@@ -143,7 +153,7 @@ class PurePursuit(Node):
         # 4. Calculate steering angle
         actual_lookahead_sq = local_x**2 + local_y**2
 
-        if actual_lookahead_sq > 0:
+        if actual_lookahead_sq > 0.0:
             # Pure pursuit formulation
             steering_angle = np.arctan2(2.0 * self.wheelbase_length * local_y, actual_lookahead_sq)
         else:
@@ -219,6 +229,8 @@ class PurePursuit(Node):
                         target_pt = (intersection_x, intersection_y)
                         # We don't break here! If the path loops or curves back into the circle,
                         # the later segments will overwrite this, keeping us moving strictly forward.
+                        # LETS TRY BREAKING AND SEEING WHAT HAPPENS
+                        break
 
         return target_pt
 
@@ -227,8 +239,9 @@ class PurePursuit(Node):
         drive_cmd = AckermannDriveStamped()
         drive_cmd.header.stamp = self.get_clock().now().to_msg()
         drive_cmd.header.frame_id = 'base_link'
-        drive_cmd.drive.speed = float(speed)
-        drive_cmd.drive.steering_angle = float(steering_angle)
+        drive_cmd.drive.speed = speed
+        # drive_cmd.drive.speed = 1.0
+        drive_cmd.drive.steering_angle = steering_angle
 
         self.drive_pub.publish(drive_cmd)
 
@@ -240,7 +253,7 @@ class PurePursuit(Node):
         self.trajectory.publish_viz(duration=0.0)
 
         self.initialized_traj = True
-        
+
     def state_callback(self, msg):
         self.mission_state = msg.data
         self.current_state = msg.data
