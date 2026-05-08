@@ -6,4 +6,4 @@ trajectory_planner:
 trajectory_follower:
   ros__parameters:
     odom_topic: "/odom"
-    drive_topic: "/drive"
+    drive_topic: "/vesc/input/navigation"

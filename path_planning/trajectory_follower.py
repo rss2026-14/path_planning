@@ -7,6 +7,7 @@ from rclpy.node import Node
 from .utils import LineTrajectory
 from std_msgs.msg import String
 
+
 import numpy as np
 from std_msgs.msg import Bool, String
 

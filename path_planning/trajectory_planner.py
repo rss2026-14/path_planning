@@ -10,6 +10,7 @@ from geometry_msgs.msg import PoseArray, PoseStamped
 from nav_msgs.msg import OccupancyGrid
 from path_planning.utils import LineTrajectory
 from rclpy.node import Node
+from std_msgs.msg import Float64
 
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
@@ -44,7 +45,7 @@ class PathPlan(Node):
             OccupancyGrid, self.map_topic, self.map_cb, 1
         )
         self.goal_sub = self.create_subscription(
-            PoseStamped, "/planner/goal ", self.goal_cb, 10
+            PoseStamped, "/planner/goal", self.goal_cb, 10
         )
         self.traj_pub = self.create_publisher(
             PoseArray, "/trajectory/current", 10
