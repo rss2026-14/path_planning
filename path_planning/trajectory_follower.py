@@ -19,8 +19,8 @@ class PurePursuit(Node):
         super().__init__("trajectory_follower")
         self.declare_parameter('odom_topic', "default")
         self.declare_parameter('drive_topic', "default")
-        self.declare_parameter('lookahead', 0.5)
-        self.declare_parameter('speed', 0.5)
+        self.declare_parameter('lookahead', 0.8)
+        self.declare_parameter('speed', 1.0)
         self.declare_parameter('max_steering_angle', 0.22)
         self.declare_parameter('steering_smoothing', 0.7)
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
