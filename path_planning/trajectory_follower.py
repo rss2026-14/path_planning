@@ -71,15 +71,18 @@ class PurePursuit(Node):
             # are not overwritten by a stream of zeros.
             return
         if not self.initialized_traj or self.trajectory.empty():
+            self.get_logger().info("empty path???")
             return
 
         if self.current_state == "OBSTACLE_PAUSE":
             # Hard stop! Pedestrian or Red Light.
             self._publish_drive_command(0.0, 0.0)
+            self.get_logger().info("obstacle???")
             return
 
         if self.current_state in ["PARKING", "PARKED"]:
             # Visual servoing is handling the motors now. Do nothing.
+            self.get_logger().info("parked?")
             return
 
         # Determine dynamic speed based on state
@@ -115,6 +118,7 @@ class PurePursuit(Node):
 
             # self.trajectory.clear()
             self.initialized_traj = False
+            self.get_logger().info("here #3")
             return
 
         target_pt = self._find_lookahead_point(curr_x, curr_y, yaw)
@@ -180,6 +184,7 @@ class PurePursuit(Node):
         continuous trajectory segments.
         """
         if len(self.trajectory.points) < 2:
+            self.get_logger().info("here #1")
             return None
 
         target_pt = None
