@@ -314,7 +314,7 @@ class PathPlan(Node):
             return
 
         self.get_logger().info("Smoothing path for Ackermann kinematics...")
-        # path = self.smooth_path(path)
+        path = self.smooth_path(path)
 
         # self.trajectory.clear()
         for p in path:
