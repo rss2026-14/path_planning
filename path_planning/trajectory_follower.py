@@ -7,6 +7,7 @@ from rclpy.node import Node
 from .utils import LineTrajectory
 from std_msgs.msg import String
 
+
 import numpy as np
 from std_msgs.msg import Bool, String
 
@@ -19,10 +20,10 @@ class PurePursuit(Node):
         super().__init__("trajectory_follower")
         self.declare_parameter('odom_topic', "default")
         self.declare_parameter('drive_topic', "default")
-        self.declare_parameter('lookahead', 0.8)
+        self.declare_parameter('lookahead', 1.5)
         self.declare_parameter('speed', 1.0)
-        self.declare_parameter('max_steering_angle', 0.22)
-        self.declare_parameter('steering_smoothing', 0.1)
+        self.declare_parameter('max_steering_angle', 0.18)
+        self.declare_parameter('steering_smoothing', 0.65)
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
 
@@ -135,8 +136,8 @@ class PurePursuit(Node):
                 for pt in self.trajectory.points:
                     d = np.sqrt((pt[0] - curr_x)**2 + (pt[1] - curr_y)**2)
                     if d < closest_dist:
-                        closest_dist = d
-                        closest_pt = pt
+                       closest_dist = d
+                       closest_pt = pt
                 target_pt = closest_pt
 
         target_x, target_y = target_pt
