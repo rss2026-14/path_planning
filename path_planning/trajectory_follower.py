@@ -33,6 +33,7 @@ class PurePursuit(Node):
         self.steering_smoothing = self.get_parameter('steering_smoothing').get_parameter_value().double_value
         self.wheelbase_length = 0.33 # 0.33 meters wheelbase
         self.prev_steering_angle = 0.0
+        self.first_time = True
 
         self.initialized_traj = False
         self.trajectory = LineTrajectory(self, "/followed_trajectory")
@@ -117,7 +118,12 @@ class PurePursuit(Node):
             self.reached_pub.publish(reached_msg)
 
             # self.trajectory.clear()
-            # self.initialized_traj = False
+            if self.first_time:
+                self.initialized_traj = False
+                self.first_time = False
+            else:
+                self.intialized_traj = True
+
             self.get_logger().info("here #3")
             return
 
