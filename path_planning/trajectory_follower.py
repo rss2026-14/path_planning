@@ -84,9 +84,9 @@ class PurePursuit(Node):
 
         # Determine dynamic speed based on state
         current_speed = self.speed
-        if self.current_state == "METER_SEARCH":
-            # Slow down so YOLO images don't blur
-            current_speed = 0.5
+        # if self.current_state == "METER_SEARCH":
+        #     # Slow down so YOLO images don't blur
+        #     current_speed = 0.5
 
         # Extract current position and yaw from odometry
         pose = odometry_msg.pose.pose
@@ -113,7 +113,7 @@ class PurePursuit(Node):
             reached_msg.data = True
             self.reached_pub.publish(reached_msg)
 
-            self.trajectory.clear()
+            # self.trajectory.clear()
             self.initialized_traj = False
             return
 
