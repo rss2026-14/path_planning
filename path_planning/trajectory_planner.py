@@ -31,7 +31,7 @@ class PathPlan(Node):
         self.declare_parameter("map_topic", "default")
         self.declare_parameter("planner_type", "grid")   # "sampling" or "grid"
         self.declare_parameter("occupancy_threshold", 50)
-        self.declare_parameter("inflate_radius", 0.43)
+        self.declare_parameter("inflate_radius", 0.0)
         self.declare_parameter("scale_factor", 0.7)
 
         self.scale_factor = self.get_parameter("scale_factor").get_parameter_value().double_value
