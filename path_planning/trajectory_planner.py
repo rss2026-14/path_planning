@@ -316,7 +316,7 @@ class PathPlan(Node):
         self.get_logger().info("Smoothing path for Ackermann kinematics...")
         # path = self.smooth_path(path)
 
-        # self.trajectory.clear()
+        self.trajectory.clear()
         for p in path:
             # use whichever addPoint signature your LineTrajectory expects
             self.trajectory.addPoint((p[0], p[1]))
