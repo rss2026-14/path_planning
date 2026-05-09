@@ -117,7 +117,7 @@ class PurePursuit(Node):
             self.reached_pub.publish(reached_msg)
 
             # self.trajectory.clear()
-            self.initialized_traj = False
+            # self.initialized_traj = False
             self.get_logger().info("here #3")
             return
 
